@@ -1,6 +1,6 @@
 #include <ros.h>                        //ROS library
 #include <std_msgs/Int32.h> //Documentation on http://wiki.ros.org/std_msgs
-#include <Stepper.h>
+#include <TimerThree.h>     //Custom library pulled from arduino playground website (for interrupts)
 
 ros::NodeHandle nh;             //Initialize ROS node handler
 std_msgs::Int32 Distance;       //ROS requires its own data type(s)
@@ -42,23 +42,28 @@ void setup() {
    digitalWrite(LEDpinR, LOW);
 
     //FOLLOWING 3 LINES ARE FOR STEPPER MOTOR
-   pinMode(pulse, OUTPUT);
-   pinMode(dir, OUTPUT);
-   digitalWrite(dir, LOW);
+   pinMode(stepperPulse, OUTPUT);
+   pinMode(stepperDir, OUTPUT);
+   digitalWrite(stepperDir, LOW);
 
    analogWrite(MOTOR_VOLTAGE_PIN, 77);   //controls motor voltage via PWM pin and RC circuit
    //Voltage is determined by second argument of function; the maximum voltage is 5V
    //The second argument ranges from 0 to 255 and is directly proportional to 0-5V
+
+   //INITALIZE INTERRUPT USING CUSTOM LIBRARY
+   Timer3.initialize(200000); //initialize timer trigger every 200,000 us (5 Hz)
+   Timer3.attachInterrupt(ultrasonicPulse);
    
 }
 
 void loop() {
-   //ultrasonicPulse(200);   //Reads distance data every 200ms
-   //measureAngle(0);        //Reads potentiometer angle after Ultrasonic Pulse, delay is 0 since ultrasonicPulse has 200ms delay
-   stepperControl(1800, LOW);      //step command, step delay of 1800us. LOW or HIGH denotes motor direction.
+   float currAngle;
+   
+   currAngle = measureAngle(0);        //Reads potentiometer angle, optional delay (not recommended if being used with stepper)
+   stepperControl(currAngle, 0);      //step command, takes in current angle
 }
 
-void ultrasonicPulse(int del) {
+void ultrasonicPulse() {
    long duration, inches, cm;
    
    //Retrieve Data from Left Sensor
@@ -115,16 +120,26 @@ void ultrasonicPulse(int del) {
    chatter.publish(&Distance);
    nh.spinOnce();
 
-   delay(del);
 }
 
-void stepperControl(long del, uint8_t dir) {
-  digitalWrite(stepperDir, dir);
+void stepperControl(float currAngle, int desiredAngle) {
+   static uint8_t turnState;
+   static int turnSpeed; //lower number = higher speed
   
+   if(currAngle > desiredAngle + 2) {
+    turnState = HIGH;
+   } else if(currAngle < desiredAngle - 2) {
+    turnState = LOW;
+   } else {
+    return;
+   }
+  
+  digitalWrite(stepperDir, turnState);
+
   currentMicros = micros();
 
-   if(currentMicros - previousMicros >= del){
-
+   if(currentMicros - previousMicros >= turnSpeed){
+  
       previousMicros = currentMicros;
       
       digitalWrite(stepperPulse,HIGH);
@@ -151,6 +166,8 @@ float measureAngle(int del) {
   nh.spinOnce();
 
   delay(del);
+
+  return degree;
 }
 
 void triggerPin(int pin){ //Sends a 10us pulse to the trigger pin of HC-SR04 ultrasonic sensor
@@ -168,3 +185,13 @@ long microsecondsToInches(long microseconds) {
 long microsecondsToCentimeters(long microseconds) {
    return microseconds / 29 / 2;
 }
+
+/*void testing() {
+  static bool state = false;
+  state = !state;
+  if(state) {
+    digitalWrite(LEDpinL, HIGH);
+  } else {
+    digitalWrite(LEDpinL, LOW);
+  }
+}*/
